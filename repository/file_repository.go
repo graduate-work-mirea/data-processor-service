@@ -25,9 +25,7 @@ func NewFileRepository(baseDataPath string) *FileRepository {
 }
 
 // SaveMarketplaceData saves marketplace data to a JSON file
-func (r *FileRepository) SaveMarketplaceData(data []map[string]interface{}, filename string) error {
-	filePath := filepath.Join(r.baseDataPath, filename)
-
+func (r *FileRepository) SaveMarketplaceData(data []map[string]interface{}, filePath string) error {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {

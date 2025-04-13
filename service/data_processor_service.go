@@ -135,7 +135,7 @@ func (s *DataProcessorService) runPythonProcessor(inputFile string) error {
 		for {
 			n, err := stderr.Read(buf)
 			if n > 0 {
-				s.logger.Error(string(buf[:n]))
+				s.logger.Warn(string(buf[:n]))
 			}
 			if err != nil {
 				break
@@ -152,7 +152,7 @@ func (s *DataProcessorService) runPythonProcessor(inputFile string) error {
 	}
 
 	// Check if processed data files exist
-	processedDataFile := filepath.Join(outputDir, "processed_data.parquet")
+	processedDataFile := filepath.Join(outputDir, "train_data.csv")
 	if _, err := os.Stat(processedDataFile); os.IsNotExist(err) {
 		return fmt.Errorf("processed data file not created: %s", processedDataFile)
 	}
