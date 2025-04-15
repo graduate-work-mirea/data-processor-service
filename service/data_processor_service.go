@@ -14,20 +14,22 @@ import (
 
 // DataProcessorService handles data processing logic
 type DataProcessorService struct {
-	fileRepo    *repository.FileRepository
-	rabbitRepo  *repository.RabbitMQRepository
-	pythonPath  string
-	scriptPath  string
-	logger      *zap.SugaredLogger
-	cutoffDate  string
-	batchSize   int
-	consumeTime time.Duration
+	fileRepo     *repository.FileRepository
+	rabbitRepo   *repository.RabbitMQRepository
+	postgresRepo *repository.PostgresRepository
+	pythonPath   string
+	scriptPath   string
+	logger       *zap.SugaredLogger
+	cutoffDate   string
+	batchSize    int
+	consumeTime  time.Duration
 }
 
 // NewDataProcessorService creates a new DataProcessorService instance
 func NewDataProcessorService(
 	fileRepo *repository.FileRepository,
 	rabbitRepo *repository.RabbitMQRepository,
+	postgresRepo *repository.PostgresRepository,
 	pythonPath string,
 	scriptPath string,
 	cutoffDate string,
@@ -36,14 +38,15 @@ func NewDataProcessorService(
 	logger *zap.SugaredLogger,
 ) *DataProcessorService {
 	return &DataProcessorService{
-		fileRepo:    fileRepo,
-		rabbitRepo:  rabbitRepo,
-		pythonPath:  pythonPath,
-		scriptPath:  scriptPath,
-		logger:      logger,
-		cutoffDate:  cutoffDate,
-		batchSize:   batchSize,
-		consumeTime: consumeTime,
+		fileRepo:     fileRepo,
+		rabbitRepo:   rabbitRepo,
+		postgresRepo: postgresRepo,
+		pythonPath:   pythonPath,
+		scriptPath:   scriptPath,
+		logger:       logger,
+		cutoffDate:   cutoffDate,
+		batchSize:    batchSize,
+		consumeTime:  consumeTime,
 	}
 }
 
@@ -79,6 +82,18 @@ func (s *DataProcessorService) ProcessMarketplaceData(ctx context.Context) error
 	// Process data using Python script
 	if err := s.runPythonProcessor(rawFilePath); err != nil {
 		return fmt.Errorf("failed to process data: %w", err)
+	}
+
+	// Save processed data to PostgreSQL if repository is available
+	if s.postgresRepo != nil {
+		if err := s.saveProcessedDataToPostgres(); err != nil {
+			s.logger.Warnf("Failed to save processed data to PostgreSQL: %v", err)
+			s.logger.Warn("Continuing without saving to database, data is still saved to files")
+		} else {
+			s.logger.Info("Successfully saved processed data to PostgreSQL")
+		}
+	} else {
+		s.logger.Info("PostgreSQL repository not available, skipping database save")
 	}
 
 	s.logger.Info("Data processing completed successfully")
@@ -158,5 +173,30 @@ func (s *DataProcessorService) runPythonProcessor(inputFile string) error {
 	}
 
 	s.logger.Info("Python data processing completed successfully")
+	return nil
+}
+
+// saveProcessedDataToPostgres saves train and test data to PostgreSQL
+func (s *DataProcessorService) saveProcessedDataToPostgres() error {
+	outputDir := s.fileRepo.GetProcessedDataPath()
+
+	// Save training data to PostgreSQL
+	trainDataFile := filepath.Join(outputDir, "train_data.csv")
+	if err := s.postgresRepo.SaveProcessedData(trainDataFile, "train"); err != nil {
+		return fmt.Errorf("failed to save training data to PostgreSQL: %w", err)
+	}
+	s.logger.Info("Saved training data to PostgreSQL")
+
+	// Save test data to PostgreSQL if it exists
+	testDataFile := filepath.Join(outputDir, "test_data.csv")
+	if _, err := os.Stat(testDataFile); err == nil {
+		if err := s.postgresRepo.SaveProcessedData(testDataFile, "test"); err != nil {
+			return fmt.Errorf("failed to save test data to PostgreSQL: %w", err)
+		}
+		s.logger.Info("Saved test data to PostgreSQL")
+	} else {
+		s.logger.Info("No test data file found, skipping saving to PostgreSQL")
+	}
+
 	return nil
 }

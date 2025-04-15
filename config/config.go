@@ -17,6 +17,13 @@ type Config struct {
 	CutoffDate            string
 	BatchSize             int
 	ConsumeTimeoutSeconds int
+	// PostgreSQL configuration
+	PostgresHost     string
+	PostgresPort     string
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDBName   string
+	PostgresSSLMode  string
 }
 
 func New() (*Config, error) {
@@ -79,6 +86,37 @@ func New() (*Config, error) {
 		}
 	}
 
+	// PostgreSQL configuration
+	postgresHost := os.Getenv("POSTGRES_HOST")
+	if postgresHost == "" {
+		postgresHost = "localhost"
+	}
+
+	postgresPort := os.Getenv("POSTGRES_PORT")
+	if postgresPort == "" {
+		postgresPort = "5432"
+	}
+
+	postgresUser := os.Getenv("POSTGRES_USER")
+	if postgresUser == "" {
+		postgresUser = "postgres"
+	}
+
+	postgresPassword := os.Getenv("POSTGRES_PASSWORD")
+	if postgresPassword == "" {
+		postgresPassword = "postgres"
+	}
+
+	postgresDBName := os.Getenv("POSTGRES_DB_NAME")
+	if postgresDBName == "" {
+		postgresDBName = "marketplace_data"
+	}
+
+	postgresSSLMode := os.Getenv("POSTGRES_SSL_MODE")
+	if postgresSSLMode == "" {
+		postgresSSLMode = "disable"
+	}
+
 	return &Config{
 		RabbitMQURL:           rabbitMQURL,
 		DataQueueName:         dataQueueName,
@@ -89,5 +127,11 @@ func New() (*Config, error) {
 		CutoffDate:            cutoffDate,
 		BatchSize:             batchSize,
 		ConsumeTimeoutSeconds: consumeTimeout,
+		PostgresHost:          postgresHost,
+		PostgresPort:          postgresPort,
+		PostgresUser:          postgresUser,
+		PostgresPassword:      postgresPassword,
+		PostgresDBName:        postgresDBName,
+		PostgresSSLMode:       postgresSSLMode,
 	}, nil
 }

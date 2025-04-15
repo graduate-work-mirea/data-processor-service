@@ -19,14 +19,22 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
+# Install required system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install required Python packages
-RUN pip install --no-cache-dir pandas numpy scikit-learn pyarrow
+RUN pip install --no-cache-dir pandas numpy scikit-learn pyarrow psycopg2-binary
 
 # Copy the Go binary from builder stage
 COPY --from=builder /app/data-processor-service .
 
 # Copy Python scripts
 COPY scripts/ ./scripts/
+
+# Copy migrations
+COPY migrations/ ./migrations/
 
 # Create data directories
 RUN mkdir -p /app/data/raw /app/data/processed

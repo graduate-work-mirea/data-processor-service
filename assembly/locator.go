@@ -1,6 +1,7 @@
 package assembly
 
 import (
+	"fmt"
 	"path/filepath"
 	"time"
 
@@ -13,13 +14,14 @@ import (
 )
 
 type ServiceLocator struct {
-	Config              *config.Config
-	RabbitClient        *rabbitmq.Client
-	Logger              *zap.SugaredLogger
-	FileRepository      *repository.FileRepository
-	RabbitMQRepository  *repository.RabbitMQRepository
+	Config               *config.Config
+	RabbitClient         *rabbitmq.Client
+	Logger               *zap.SugaredLogger
+	FileRepository       *repository.FileRepository
+	RabbitMQRepository   *repository.RabbitMQRepository
+	PostgresRepository   *repository.PostgresRepository
 	DataProcessorService *service.DataProcessorService
-	RabbitMQController  *controller.RabbitMQController
+	RabbitMQController   *controller.RabbitMQController
 }
 
 func NewServiceLocator(cfg *config.Config, logger *zap.SugaredLogger) (*ServiceLocator, error) {
@@ -36,6 +38,31 @@ func NewServiceLocator(cfg *config.Config, logger *zap.SugaredLogger) (*ServiceL
 		return nil, err
 	}
 
+	// Initialize PostgreSQL connection
+	connString := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser,
+		cfg.PostgresPassword, cfg.PostgresDBName, cfg.PostgresSSLMode,
+	)
+
+	var postgresRepo *repository.PostgresRepository
+	postgresRepo, err = repository.NewPostgresRepository(connString, logger)
+	if err != nil {
+		logger.Warnf("Failed to initialize PostgreSQL repository: %v", err)
+		logger.Warn("Continuing without PostgreSQL connection, data will only be saved to files")
+		postgresRepo = nil
+	} else {
+		// Run migrations only if connection was successful
+		if err := postgresRepo.RunMigrations(cfg.PostgresDBName); err != nil {
+			logger.Warnf("Failed to run migrations: %v", err)
+			postgresRepo.Close()
+			postgresRepo = nil
+			logger.Warn("Continuing without PostgreSQL connection, data will only be saved to files")
+		} else {
+			logger.Info("PostgreSQL connection and migrations successful")
+		}
+	}
+
 	// Initialize repositories
 	fileRepo := repository.NewFileRepository(cfg.DataPath)
 	rabbitRepo := repository.NewRabbitMQRepository(rabbitClient, cfg.DataQueueName, logger)
@@ -45,11 +72,12 @@ func NewServiceLocator(cfg *config.Config, logger *zap.SugaredLogger) (*ServiceL
 	dataProcessorService := service.NewDataProcessorService(
 		fileRepo,
 		rabbitRepo,
+		postgresRepo,
 		cfg.PythonPath,
 		scriptPath,
 		cfg.CutoffDate,
 		cfg.BatchSize,
-		time.Duration(cfg.ConsumeTimeoutSeconds) * time.Second,
+		time.Duration(cfg.ConsumeTimeoutSeconds)*time.Second,
 		logger,
 	)
 
@@ -57,18 +85,22 @@ func NewServiceLocator(cfg *config.Config, logger *zap.SugaredLogger) (*ServiceL
 	rabbitMQController := controller.NewRabbitMQController(dataProcessorService, logger)
 
 	return &ServiceLocator{
-		Config:              cfg,
-		RabbitClient:        rabbitClient,
-		Logger:              logger,
-		FileRepository:      fileRepo,
-		RabbitMQRepository:  rabbitRepo,
+		Config:               cfg,
+		RabbitClient:         rabbitClient,
+		Logger:               logger,
+		FileRepository:       fileRepo,
+		RabbitMQRepository:   rabbitRepo,
+		PostgresRepository:   postgresRepo,
 		DataProcessorService: dataProcessorService,
-		RabbitMQController:  rabbitMQController,
+		RabbitMQController:   rabbitMQController,
 	}, nil
 }
 
 func (l *ServiceLocator) Close() {
 	if l.RabbitClient != nil {
 		l.RabbitClient.Close()
+	}
+	if l.PostgresRepository != nil {
+		l.PostgresRepository.Close()
 	}
 }

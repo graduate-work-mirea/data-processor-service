@@ -112,7 +112,17 @@ def create_features(df):
     # Фильтрация продуктов с менее чем 7 записями
     product_counts = df.groupby('product_name').size()
     df = df[df['product_name'].isin(product_counts[product_counts >= 7].index)]
-    return df.dropna(subset=['price_target', 'sales_target'])
+    
+    # Заполняем пропущенные значения целевых переменных нулями, чтобы избежать ошибок при сохранении в БД
+    df['price_target'] = df['price_target'].fillna(0)
+    df['sales_target'] = df['sales_target'].fillna(0)
+    
+    # Убедимся, что все строковые значения не содержат проблемных символов для БД
+    string_columns = df.select_dtypes(include=['object']).columns
+    for col in string_columns:
+        df[col] = df[col].str.replace("'", "").str.replace('"', "").str.slice(0, 254)
+    
+    return df.dropna(subset=['price_target', 'sales_target'], how='all')
 
 def process_data(input_file, output_dir, cutoff_date):
     """Основная функция обработки данных."""
@@ -125,6 +135,10 @@ def process_data(input_file, output_dir, cutoff_date):
         # Разделение на тренировочную и тестовую выборки
         train_df = df[df['date'] < cutoff_date]
         test_df = df[df['date'] >= cutoff_date]
+
+        # Convert dates to string format for CSV export
+        train_df['date'] = train_df['date'].dt.strftime('%Y-%m-%d')
+        test_df['date'] = test_df['date'].dt.strftime('%Y-%m-%d')
 
         # Сохранение данных
         os.makedirs(output_dir, exist_ok=True)
